@@ -1,0 +1,536 @@
+---
+title: "NYPD Shooting Incident Data Report"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(scales) 
+library(pracma)
+library("gplots")
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Contents
+
+1. Project Outcomes
+2. Loading Datasets 
+    1. Data Source 
+    2. Loading the data
+    3. Displaying sample data
+    4. Understanding the schema
+3. Data Cleaning & Pre-processing
+    1. Identifying and replacing nulls
+    2. Looking at the NAs
+4. Exploratory Data Analysis
+    1. Which gender of victims are more susceptible?
+    2. Which age groups of victims are more susceptible?
+5. Identifying biases
+    1. Significance of bias
+    2. Racial bias
+6. Data Visualization
+    1. Geo-plot using the Lat|Long Co-ordinates
+    2. Time series plot of crime incidents
+7. Data Modeling
+    1. Simple Linear Regression
+    2. Multiple Linear Regression
+8. Summary
+
+## 1. Project Outcomes
+
+- The goal of this report is to Import, tidy and analyze the NYPD Shooting Incident dataset obtained and make sure that the project is reproducible and contains some visualization and analysis. 
+- At least two visualizations and one model must be included. 
+- Also, to identify any bias possible in the data and in the analysis.
+
+
+## 2. Loading Datasets
+
+In this section, we shall see about loading the datasets and understanding the schema of the datasets.
+
+### 2.1. Data Source
+
+- The data has been downloaded from https://catalog.data.gov/dataset. The dataset *NYPD Shooting Incident Data (Historic)* has the historical data of the Shooting incident happened in New York. The data has been reported by the New york police department
+- I have chosen the CSV data format for its simplicity CSV.
+- The comma separated version can be downloaded from https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD
+
+
+### 2.2. Loading the data
+
+It's better to read directly from the URL so that the code is __reproducible__. Having a local copy of dataset might result in inconsistent data copies by different collaborators.
+
+Code:
+```{r data}
+data_url <- 'https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD'
+data <- read.csv(data_url)
+```
+
+
+### 2.3. Displaying sample data
+
+Now let's take a look at a few rows from the dataset.
+
+Code:
+
+```{r data1, results="hide"}
+head(data)
+```
+
+Output:
+
+```{r data2, echo=FALSE}
+head(data)
+```
+
+### 2.4. Understanding the schema
+
+Inorder to refer tge column names for analysis and visualization, let's try to understand the column name and types
+
+*Code:*
+
+```{r data3, results="hide"}
+str(data)
+```
+
+*Output:*
+
+```{r data4, echo=FALSE}
+str(data)
+```
+
+## 3. Data Cleaning & Pre-processing
+
+In this section, I've tried to cleanse the data as much as possible so that analysis and modeling will be smooth.
+
+### 3.1. Identifying and replacing nulls
+
+Lets convert all the blanks with "NA" meaning Not-Applicable.
+
+*Code:*
+
+```{r data5, results="hide"}
+
+#Looking at few blanks 
+print("Before preprocessing : ")
+print(head(data[data==""]))
+
+#clean blanks with 'NA's
+cleaned_data <- data
+cleaned_data[data==""] <- NA
+
+print("After preprocessing : ")
+print(head(cleaned_data[data==""]))
+```
+
+*Output:*
+
+```{r data6, echo=FALSE}
+
+#Looking at few blanks 
+print("Before preprocessing : ")
+print(head(data[data==""]))
+
+#clean blanks with 'NA's
+cleaned_data <- data
+cleaned_data[data==""] <- NA
+
+print("After preprocessing : ")
+print(head(cleaned_data[data==""]))
+```
+
+### 3.2. Looking at the NAs
+
+Let's see how many NAs are present in each columns.
+
+*Code:*
+
+```{r data7, results="hide"}
+colSums(is.na(cleaned_data)) 
+
+```
+
+*Output:*
+
+```{r data8, echo=FALSE}
+
+colSums(is.na(cleaned_data)) 
+```
+
+It appears that the columns LOCATION_DESC, PERP_RACE, PERP_SEX and PERP_AGE_GROUP have lots of null values.
+
+## 4. Exploratory Data Analysis (EDA)
+
+Let's explore by analysing a few dimensions from the dataset.
+
+### 4.1. Which gender of victims are more susceptible?
+
+- Gender is a primary but significant dimension that could help us understand the targets of the shooting crime incidents.
+- For the gender analysis, we shall use the VIC_SEX dimension.
+
+*Code*:
+
+```{r data41c, out.width="100%", results="hide"}
+
+gender <- cleaned_data %>% 
+                count(VIC_SEX) %>% 
+                rename(VIC_SEX_CNT = n)
+
+#Sorting by Victim gender count and finding % of gender
+gender %>%
+arrange(desc(VIC_SEX_CNT)) %>%
+mutate(percentage = percent(VIC_SEX_CNT / sum(VIC_SEX_CNT))) -> gender
+
+
+#Plotting the numbers
+bar_plot <- barplot(gender$VIC_SEX_CNT,
+                    names.arg=gender$VIC_SEX,
+                    xlab="Victim Gender",
+                    ylab="#Crime Incidents",
+                    col="blue",
+                    main="Victim Gender Analysis")
+
+```
+
+*Output*:
+
+
+```{r data41o, echo=FALSE}
+print(gender)
+bar_plot
+```
+
+*Analysis*:
+
+- From the numbers, _90.6%_ of victims are identified as males. 
+- Males victims are highly susceptible to shooting crime according to the NYPD data. 
+
+### 4.2. Which age-group of victims are more susceptible?
+
+- Age-group is another interesting dimension where the victims could potentially be targeted by their age
+- For age group analysis, we shall use the VIC_AGE_GROUP dimension.
+- I've used balloon plots for age-group analysis.
+
+*Code*:
+
+```{r data42c, out.width="100%", results="hide"}
+
+age_group <- cleaned_data %>% 
+                count(VIC_AGE_GROUP) %>% 
+                rename(VIC_AGE_GROUP_CNT = n)
+
+#convert the data as a table
+
+age_group_matrix <- as.table(as.matrix(age_group$VIC_AGE_GROUP_CNT))
+row.names(age_group_matrix) <- age_group$VIC_AGE_GROUP
+colnames(age_group_matrix) <- "#CRIMES"
+
+#Plotting the numbers
+age_plot <- balloonplot(t(age_group_matrix), 
+                        main ="Victim Age Group Analysis", 
+                        xlab="",
+                        ylab="VICITIM_AGE_GROUP",
+                        label = FALSE, 
+                        show.margins = TRUE)
+
+```
+
+*Output*:
+
+```{r data42o, echo=FALSE}
+
+print(age_group_matrix)
+age_plot
+
+```
+
+*Analysis*:
+
+- From the above balloon plot, we can see that the victims of age-group _25-44_ are more prone to the NYPD shooting crime using the size of the balloons.
+- Followed by that, the victims age group of _18-24_ are also susceptible to the crime.
+- Around 72.6% of the victims fall under the age-groups 18-24 and 25-44.
+
+## 5. Identifying Biases
+
+Let's find out if there any biases are present in the dataset.
+
+### 5.1. Significance of Bias
+
+- Bias can cause the results of a scientific study to be disproportionately weighted in favor of one result or group of subjects. 
+- This can cause misunderstandings of natural processes that may make conclusions drawn from the data unreliable.
+
+### 5.2. Racial Bias
+
+- When it comes to racial dimension, it is better to check for Racial bias so that the model won't be inclined to a particular race or community. 
+- We will use the column VIC_RACE and compute the % distribution across the races.
+
+*Code*:
+
+```{r data52c, out.width="100%", results="hide"}
+
+library(scales) 
+
+#Getting the count of each race
+races <- cleaned_data %>% 
+                count(VIC_RACE) %>% 
+                rename(VIC_RACE_CNT = n)
+
+#Sorting by Victim race count and finding % of races
+races %>%
+arrange(desc(VIC_RACE_CNT)) %>%
+mutate(percentage = percent(VIC_RACE_CNT / sum(VIC_RACE_CNT))) -> races
+print(races)
+
+#Plotting the numbers
+
+library(ggplot2)
+library(ggrepel)
+library(forcats)
+
+pie <- ggplot(races, aes(x = "", y = VIC_RACE_CNT, fill = fct_inorder(VIC_RACE))) +
+       geom_bar(width = 1, stat = "identity") +
+       coord_polar("y", start = 0) +
+       geom_label_repel(aes(label = percentage), size=5, show.legend = F, nudge_x = 1) +
+       guides(fill = guide_legend(title = "VIC_RACE")) + 
+       ggtitle("Identifying Racial Bias")
+```
+
+*Output:*
+
+```{r data52o, echo=FALSE}
+print(races)
+pie
+```
+
+*Analysis*:
+
+It is clearly seen that the race "BLACK" (71.5%) is over-represented in the dataset. Also, put together, Black and Black-Hispanic races contribute to >80% of the overall races.
+
+## 6. Data Visualization
+
+In this section, I have tried to visualize the data from different views.
+
+### 6.1. Geo-plot using Longitude and Longitude 
+
+- Given that the latitude and longitude of the crime incident, we can visualize a geo-plot and try to infer whether any clusters are significantly seen.
+- I'm interested in viewing the clusters/zones where more incidents have occurred. So I'm using "density2d" for the contour effect.
+
+*Code:*
+
+```{r data61c, out.width="100%", results='hide'}
+
+library(ggmap) 
+geo_plot <- qmplot(Longitude,
+                   Latitude,
+                   data=cleaned_data,
+                   colour = I('red'),
+                   size = I(.8),
+                   geom = "density2d",
+                   main = "Geo-plot of NYPD Shooting Incident")
+
+```
+
+*Output:*
+
+```{r data610, out.width="100%", echo=FALSE}
+
+geo_plot
+```
+
+*Analysis:*
+
+There are two primary crime zones - _Brooklyn_ and _Bronx_ from the above plot.
+
+### 6.2. Time Series plot of the crime incidents
+
+- Since we have the time dimension (OCCUR_DATE), let's attempt to visualize the time series plot of the crime incidents.
+- I've considered quarterly plots since the date or month granularity is too much fragmented.
+
+*Code:*
+
+```{r data62c, out.width="100%", results='hide'}
+
+library(zoo)
+
+#Derive YEAR_QUARTER Column from OCCUR_DATE
+cleaned_data$YEAR_QUARTER <- as.yearqtr(cleaned_data$OCCUR_DATE, format = "%m/%d/%Y")
+
+#Aggregate the data by YEAR_QUARTER
+time_series_data <- cleaned_data %>% 
+                       count(YEAR_QUARTER) %>% 
+                       rename(NUM_INCIDENTS = n) %>%
+                       arrange(YEAR_QUARTER)
+time_series_stats <- time_series_data %>% 
+                        arrange(desc(NUM_INCIDENTS)) %>% 
+                        mutate(percentage = percent(NUM_INCIDENTS / sum(NUM_INCIDENTS)))
+  
+#Plot the time series
+time_series_plot <- plot(time_series_data$YEAR_QUARTER, 
+                         time_series_data$NUM_INCIDENTS, 
+                         main="Time Series plot of NY Shooting Incidents (2006-2020)",
+                         xlab="YEAR_QUARTER", 
+                         ylab="NUM_INCIDENTS",
+                         col="black",pch=18,las=1,
+                         lines(time_series_data$YEAR_QUARTER,time_series_data$NUM_INCIDENTS, col="red"))
+
+```
+
+*Output:*
+
+```{r data620, out.width="100%", echo=FALSE}
+
+print(head(time_series_stats))
+time_series_plot
+
+```
+
+*Analysis:*
+
+- It appears that maximum number of crime incidents happened during _Q3_. 
+- The years _2020_ and _2011_ seems to have more number of crimes.
+- Around _3.5%_ of entire crime happened in 2020-Q3
+
+## 7. Data Modeling
+
+In this section we will frame data science problems and try to answer them using regression models.
+
+### 7.1. Defining the Problem
+
+*Problem:*
+
+- Let's try to forecast the number of crimes that might happen in the near future.
+- Forecast is done at global level
+
+### 7.2. Choosing a model
+
+- From 6.2, it is clearly evident that the data has seasonality where Q3 reprensents the peak of crime incidents.
+- We shall do a _Simple Exponential Smoothing (SES)_ to predict the forecast for next 12 months (2021)
+
+### 7.3. Time Series Forecasting using SES
+
+- Lets validate how good is SES forecast using the historical time series.
+- I'm using the dataframe _*time_series_data*_ from section 6.2 for modeling and analysis.
+- The _*time_series_data*_  has 60 data points from 2006 Q1 to 2020 Q4.
+- Let's use 75% of the data for training (45 data points)
+- And the remaining 25% of the data for testing (15 data points)
+
+*Code:*
+
+```{r data73c, out.width="100%", results='hide',error=FALSE,keep = "none",fig.show='hide'}
+
+library(forecast)
+library(dygraphs)
+#Lets define the training & testing data
+train <- time_series_data[1:45,]$NUM_INCIDENTS
+test <- time_series_data[46:60,]
+
+#Now, let's do a SES forecast for the next 15 quarters 
+forecast_results <- forecast(train,h=15)  
+
+#Assign actuals  from test set and compute averages 
+forecast_results <- as.data.frame(forecast_results)
+forecast_results$actuals <- test$NUM_INCIDENTS
+forecast_results$YEAR_QUARTER <- test$YEAR_QUARTER
+forecast_results$avg_forecast <- (forecast_results$"Lo 80"+forecast_results$"Hi 80")/2
+
+
+#PLot the forecast results
+forecast_plot <- plot(time_series_data$YEAR_QUARTER, 
+                         time_series_data$NUM_INCIDENTS, 
+                         main="Time Series Forecast of NY Shooting Incidents",
+                         xlab="YEAR_QUARTER", 
+                         ylab="NUM_INCIDENTS",
+                         col="black",pch=18,las=1,
+                         lines(time_series_data$YEAR_QUARTER,time_series_data$NUM_INCIDENTS, col="blue"))
+
+forecast_line <- lines(forecast_results$YEAR_QUARTER,
+                       time_series_data$avg_forecast,
+                       col="orange",
+                       lwd=2,
+                       pch=19 ,
+                       type="b",
+                       lty=2)   
+
+legend_obj <-legend("topright", 
+                    legend = c("Actuals", "Forecast"), 
+                    col = c(rgb(0.2,0.4,0.1,0.7), 
+                    rgb(0.8,0.4,0.1,0.7)), 
+                    pch = c(18,19), 
+                    pt.cex = 2, 
+                    cex = 1.2, 
+                    text.col = "black", 
+                    horiz = F , 
+                    inset = c(0.1, 0.1))
+
+```
+
+*Output:*
+
+```{r data73o, out.width="100%", echo=FALSE}
+
+forecast_plot
+forecast_line
+legend_obj
+
+```
+
+
+### 7.4. Forecast Analysis
+
+Let's compute the forecast accuracy and error.
+
+*Code:*
+
+```{r data74c, out.width="100%", results='hide',error=FALSE,keep = "none"}
+
+library(Metrics)
+
+x<-forecast_results$actuals
+y<-forecast_results$avg_forecast
+  
+#Determining the Mean Absolute Error (MAE)
+print("Mean Absolute Error (MAE) : ")
+print(mae(x,y))
+print("Root Mean Square Error (RMSE) : ")
+print(rmse(x,y))
+
+#Determining the accuracy score
+print("Forecast Accuracy : ")
+print(accuracy(x,y))
+```
+
+*Output:*
+
+```{r data74o, out.width="100%", echo=FALSE}
+
+#Determining the Mean Absolute Error (MAE)
+print("Mean Absolute Error (MAE) : ")
+print(mae(x,y))
+print("Root Mean Square Error (RMSE) : ")
+print(rmse(x,y))
+
+#Determining the accuracy score
+print("Forecast Accuracy : ")
+print(accuracy(x,y))
+```
+       
+*Results:*
+
+- We achieved a forecast model with _81.3%_ confidence for predicting the crime incidents using the historical data
+- The forecast accuracy can be improved by using other statistical models like Holt Winners, ARIMA, etc., 
+
+## 8. Summary
+
+- The report summarizes the various aspects of looking into NYPD Shooting crime datasets
+- A basic SES model has been developed for forecasting the number of crime incidents.
+- This report mainly focuses on the victims (ie., VIC_AGE_GROUP,	VIC_SEX,	VIC_RACE). There are other dimensions which might have potential insights towards understanding the crime.
+- Modeling is limited to statistical approach and there is a scope for advanced ML models which might give interesting results.
+
+
+
+
+
+
+            
+            
+            
